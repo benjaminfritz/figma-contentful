@@ -80,10 +80,13 @@
     .cf-link:hover { text-decoration: underline; }
 
     dialog.fig-fill-picker-dialog { width:300px;max-width:300px;min-width:300px;max-height:none;height:max-content; }
+    .plugin-banner { display: block; width: 100%; height: auto; }
   </style>
 </head>
 <body>
 <div id="plugin-root">
+
+  <img class="plugin-banner" src="{{PLUGIN_BANNER_SRC}}" alt="Figma to Contentful">
 
   <div class="tab-bar">
     <div class="tab active" id="tab-setup" onclick="switchTab('setup')">Setup</div>

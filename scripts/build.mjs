@@ -1,7 +1,12 @@
 import { build, context } from 'esbuild'
 import { readFile } from 'node:fs/promises'
 
-const html = await readFile(new URL('../ui.html', import.meta.url), 'utf8')
+const [htmlTemplate, banner] = await Promise.all([
+  readFile(new URL('../ui.html', import.meta.url), 'utf8'),
+  readFile(new URL('../plugin-banner.png', import.meta.url)),
+])
+const bannerSrc = `data:image/png;base64,${banner.toString('base64')}`
+const html = htmlTemplate.replace('{{PLUGIN_BANNER_SRC}}', bannerSrc)
 
 const options = {
   entryPoints: ['code.ts'],
