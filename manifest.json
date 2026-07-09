@@ -12,7 +12,7 @@
     ]
   },
   "relaunchButtons": [
-    { "command": "8690d38d-d961-444b-879f-8eab521369a5", "name": "Contentful sync" }
+    { "command": "8690d38d-d961-444b-879f-8eab521369a5", "name": "Figma to Contentful sync" }
   ],
   "ui": "ui.html"
 }
