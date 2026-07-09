@@ -1,6 +1,6 @@
 # Figma to Contentful Sync
 
-A private Figma Design plugin that turns a selected page section into a draft Contentful entry tree. It reads nested component instances, maps them to Contentful content types, uploads detected image fills as assets, and preserves parent/child entry links.
+A Figma Design plugin that turns a selected page section into a draft Contentful entry tree. It reads nested component instances, maps them to Contentful content types, uploads detected image fills as assets, and preserves parent/child entry links.
 
 ## What it does
 
