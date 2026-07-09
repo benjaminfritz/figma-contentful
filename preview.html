@@ -1,0 +1,17 @@
+<!doctype html>
+<title>Figma to Contentful sync — UI preview</title>
+<style>body{margin:0;background:#f5f5f5;font:14px Inter,system-ui,sans-serif}.note{max-width:360px;margin:24px auto 12px;color:#555}.device{width:360px;margin:auto;background:#fff;box-shadow:0 4px 24px #0002}.device iframe{display:block;width:360px;height:640px;border:0}</style>
+<div class="note">UI-only preview. “Analyze” returns sample Figma data; syncing to Contentful is intentionally unavailable here.</div>
+<div class="device"><iframe id="plugin" src="ui.html" title="Plugin UI preview"></iframe></div>
+<script>
+  const frame = document.getElementById('plugin')
+  const sample = { type: 'analysis-result', frameName: 'Homepage', frameId: 'preview', trees: [{ id: '1', instanceName: 'Hero', componentType: 'hero', texts: [{ name: 'heading', content: 'Build something useful', isLarge: true }], imageNodeId: null, children: [{ id: '2', instanceName: 'CTA', componentType: 'button', texts: [{ name: 'label', content: 'Get started', isLarge: false }], imageNodeId: null, children: [] }] }] }
+  function send(pluginMessage) { frame.contentWindow.postMessage({ pluginMessage }, '*') }
+  frame.addEventListener('load', () => send({ type: 'selection-state', hasFrame: true }))
+  addEventListener('message', event => {
+    const message = event.data && event.data.pluginMessage
+    if (!message) return
+    if (message.type === 'ui-ready') send({ type: 'selection-state', hasFrame: true })
+    if (message.type === 'analyze') send(sample)
+  })
+</script>

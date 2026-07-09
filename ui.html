@@ -1,0 +1,715 @@
+<!doctype html>
+<html>
+<head>
+  <script>
+    try { window.localStorage.getItem('x') } catch (e) {
+      const store = new Map()
+      const shim = {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => { store.set(k, String(v)) },
+        removeItem: (k) => { store.delete(k) },
+        clear: () => { store.clear() },
+        key: (i) => Array.from(store.keys())[i] ?? null,
+        get length() { return store.size },
+      }
+      Object.defineProperty(window, 'localStorage', { value: shim, configurable: true })
+    }
+  </script>
+  <style>
+    html, body { margin: 0; padding: 0; height: auto; min-height: 0; background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #1e1e1e); }
+    #plugin-root { height: auto; }
+    body { display: block; font-family: Inter, sans-serif; font-size: 11px; line-height: 1.4; }
+    input { box-sizing: border-box; width: 100%; min-height: 30px; padding: 6px 8px; border: 1px solid var(--figma-color-border-strong, #b3b3b3); border-radius: 4px; background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #1e1e1e); font: inherit; }
+    input:focus { outline: 2px solid var(--figma-color-border-selected, #0d99ff); outline-offset: -1px; }
+    .field { display: grid; gap: 4px; margin: 0 0 10px; }
+    .field label { font-size: 11px; color: var(--figma-color-text, #1e1e1e); }
+    .panel { padding: 12px; }
+    .footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--figma-color-border, #e5e5e5); }
+    .footer .status { margin-right: auto; color: var(--figma-color-text-secondary, #666); }
+    button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 4px; background: var(--figma-color-bg-brand, #0d99ff); color: var(--figma-color-text-onbrand, #fff); font: inherit; cursor: pointer; }
+    button:hover { background: var(--figma-color-bg-brand-hover, #007be5); }
+    button.secondary { color: var(--figma-color-text, #1e1e1e); background: var(--figma-color-bg-secondary, #f0f0f0); }
+    button:disabled { cursor: default; opacity: .45; }
+
+    .tab-bar { display: flex; border-bottom: 1px solid var(--figma-color-border, #e5e5e5); background: var(--figma-color-bg); position: sticky; top: 0; z-index: 10; }
+    .tab { flex: 1; padding: 8px 4px; text-align: center; font-size: 11px; cursor: pointer; color: var(--figma-color-text-secondary, #666); border-bottom: 2px solid transparent; user-select: none; }
+    .tab.active { color: var(--figma-color-text, #000); border-bottom: 2px solid var(--figma-color-bg-brand, #0d99ff); font-weight: 500; }
+
+    .view { display: none; }
+    .view.active { display: block; }
+    .info-text { font-size: 11px; color: var(--figma-color-text-secondary, #666); line-height: 1.5; padding: 8px 12px 0; margin: 0; }
+
+    .tree-root { margin: 6px 12px 0; padding: 0; list-style: none; }
+    .tree-node { margin: 0; padding: 0; }
+    .tree-label { display: flex; align-items: center; gap: 5px; padding: 3px 5px; border-radius: 4px; font-size: 11px; color: var(--figma-color-text); }
+    .tree-label:hover { background: var(--figma-color-bg-secondary, #f5f5f5); }
+    .tree-type { font-size: 9px; padding: 1px 5px; border-radius: 10px; background: var(--figma-color-bg-brand-tertiary, #d9edff); color: var(--figma-color-bg-brand, #0d99ff); white-space: nowrap; flex-shrink: 0; }
+    .tree-type.unmatched { background: var(--figma-color-bg-danger-tertiary, #fff0f0); color: var(--figma-color-text-danger, #c0392b); }
+    .tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .tree-meta { font-size: 9px; color: var(--figma-color-text-secondary); white-space: nowrap; flex-shrink: 0; }
+    .tree-children { list-style: none; padding: 0 0 0 12px; margin: 0; border-left: 1px solid var(--figma-color-border, #e5e5e5); margin-left: 10px; }
+    .tree-more { font-size: 10px; color: var(--figma-color-text-secondary); padding: 2px 6px; }
+
+    .frame-label { padding: 8px 12px 2px; font-size: 11px; font-weight: 600; color: var(--figma-color-text); }
+    .count-label { padding: 0 12px 4px; font-size: 10px; color: var(--figma-color-text-secondary); }
+
+    .mapping-section { padding: 8px 12px 6px; border-top: 1px solid var(--figma-color-border, #e5e5e5); margin-top: 4px; }
+    .mapping-header { font-size: 10px; font-weight: 600; color: var(--figma-color-text-secondary); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+    .mapping-subheader { font-size: 10px; color: var(--figma-color-text-secondary); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .mapping-header .warn-badge { font-size: 9px; background: var(--figma-color-bg-danger-tertiary, #fff0f0); color: var(--figma-color-text-danger, #c0392b); padding: 1px 5px; border-radius: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+    .mapping-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 11px; }
+    .mapping-arrow { color: var(--figma-color-text-secondary); flex-shrink: 0; }
+    .mapping-input { flex: 1; font-size: 11px; font-family: var(--font-family, inherit); background: var(--figma-color-bg-secondary, #f5f5f5); border: 1px solid var(--figma-color-border, #e5e5e5); border-radius: 4px; padding: 3px 6px; color: var(--figma-color-text); min-width: 0; }
+    .mapping-input:focus { outline: none; border-color: var(--figma-color-bg-brand, #0d99ff); background: var(--figma-color-bg); }
+    .mapping-hint { font-size: 10px; color: var(--figma-color-text-secondary); margin-top: 4px; }
+    .mapping-error { font-size: 10px; color: var(--figma-color-text-danger, #c0392b); display: flex; align-items: center; gap: 5px; }
+    .retry-link { color: var(--figma-color-bg-brand, #0d99ff); cursor: pointer; text-decoration: underline; }
+    .ct-count { font-size: 10px; color: var(--figma-color-text-secondary); font-style: italic; }
+
+    .progress-list { padding: 6px 12px; max-height: 400px; overflow-y: auto; }
+    .progress-item { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; padding: 3px 0; color: var(--figma-color-text); }
+    .p-icon { min-width: 14px; text-align: center; }
+    .p-icon.spin { animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .p-text { word-break: break-word; }
+
+    .done-panel { padding: 12px; }
+    .done-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--figma-color-text); }
+    .done-body { font-size: 11px; color: var(--figma-color-text-secondary); line-height: 1.5; }
+    .cf-link { display: inline-block; margin-top: 8px; font-size: 11px; color: var(--figma-color-bg-brand, #0d99ff); text-decoration: none; }
+    .cf-link:hover { text-decoration: underline; }
+
+    dialog.fig-fill-picker-dialog { width:300px;max-width:300px;min-width:300px;max-height:none;height:max-content; }
+  </style>
+</head>
+<body>
+<div id="plugin-root">
+
+  <div class="tab-bar">
+    <div class="tab active" id="tab-setup" onclick="switchTab('setup')">Setup</div>
+    <div class="tab" id="tab-content" onclick="switchTab('content')">Sync</div>
+  </div>
+
+  <div class="view active" id="view-setup">
+    <p class="info-text">Enter your Contentful credentials. The Management API token is saved to this file's plugin data.</p>
+    <div class="panel">
+      <div class="field"><label for="space-id">Space ID</label><input id="space-id" placeholder="abc123xyz"></div>
+      <div class="field"><label for="environment">Environment</label><input id="environment" placeholder="master"></div>
+      <div class="field"><label for="locale">Locale</label><input id="locale" placeholder="de-DE"></div>
+      <div class="field"><label for="page-content-type">Page content type</label><input id="page-content-type" placeholder="page"></div>
+      <div class="field"><label for="api-token">Management API token</label><input id="api-token" type="password" placeholder="CFPAT-…" autocomplete="off"></div>
+    </div>
+    <div class="footer">
+      <label class="status" id="setup-status"></label>
+      <button id="save-btn" type="button" onclick="saveCredentials()">Save credentials</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-content">
+
+    <div id="state-analyze">
+      <p class="info-text">Select a frame on the canvas. The plugin maps its component hierarchy to Contentful content types, preserving parent–child relationships.</p>
+      <div class="footer">
+        <label class="status" id="analyze-status">Select a frame or section to start</label>
+        <button id="analyze-btn" type="button" onclick="analyzeDesign()" disabled>Analyze selection</button>
+      </div>
+    </div>
+
+    <div id="state-results" style="display:none">
+      <div class="frame-label" id="frame-name-label"></div>
+      <div class="count-label" id="count-label"></div>
+      <ul class="tree-root" id="tree-root"></ul>
+
+      <div class="mapping-section" id="mapping-section" style="display:none">
+        <div class="mapping-header">
+          Content type mapping
+          <span class="warn-badge" id="unmatched-badge"></span>
+        </div>
+        <div class="mapping-subheader" id="mapping-subheader"></div>
+        <datalist id="ct-datalist"></datalist>
+        <div id="mapping-list"></div>
+        <div class="mapping-hint">Type a Contentful content type ID or pick from the list. Leave blank to skip.</div>
+      </div>
+
+      <div class="footer">
+        <label class="status" id="sync-status"></label>
+        <button type="button" class="secondary" onclick="reanalyze()">Re-analyze</button>
+        <button id="sync-btn" type="button" onclick="syncToContentful()">Sync to Contentful</button>
+      </div>
+    </div>
+
+    <div id="state-progress" style="display:none">
+      <div style="padding:8px 12px 4px;font-size:11px;font-weight:600;color:var(--figma-color-text);">Syncing to Contentful…</div>
+      <div class="progress-list" id="progress-list"></div>
+    </div>
+
+    <div id="state-done" style="display:none">
+      <div class="done-panel">
+        <div class="done-title">✓ Sync complete</div>
+        <div class="done-body" id="done-body"></div>
+      </div>
+      <div class="footer"><button type="button" class="secondary" onclick="reanalyze()">Sync again</button></div>
+    </div>
+
+  </div>
+
+</div>
+<script>
+  var creds = { spaceId: '', environment: 'master', locale: 'de-DE', apiToken: '', pageContentType: 'page' }
+  var analysisData = null
+  var hasFrame = false
+  var pendingImageResolvers = {}
+  var ctCache = {}
+  var allContentTypes = []
+  var typeOverrides = {}
+
+  var lastH = 0, raf = 0
+  function measureH() {
+    var root = document.getElementById('plugin-root')
+    if (!root) return 0
+    var h = Math.ceil(root.getBoundingClientRect().height)
+    var dlg = document.querySelector('dialog.fig-fill-picker-dialog[open]')
+    if (dlg) h = Math.max(h, Math.ceil(dlg.getBoundingClientRect().bottom))
+    return h
+  }
+  function reportH() {
+    var h = measureH()
+    if (h && h !== lastH) { lastH = h; parent.postMessage({ pluginMessage: { type: 'resize', height: h } }, '*') }
+  }
+  var rootEl = document.getElementById('plugin-root')
+  if (rootEl && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function() { if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(reportH) }).observe(rootEl)
+  }
+  new MutationObserver(function() { if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(reportH) })
+    .observe(document.body, { childList: true, attributes: true, attributeFilter: ['open'], subtree: true })
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active') })
+    document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active') })
+    document.getElementById('tab-' + tab).classList.add('active')
+    document.getElementById('view-' + tab).classList.add('active')
+  }
+
+  function saveCredentials() {
+    var spaceId = (document.getElementById('space-id').value || '').trim()
+    var environment = (document.getElementById('environment').value || '').trim() || 'master'
+    var locale = (document.getElementById('locale').value || '').trim() || 'de-DE'
+    var pageContentType = (document.getElementById('page-content-type').value || '').trim() || 'page'
+    var apiToken = (document.getElementById('api-token').value || '').trim()
+    if (!spaceId || !apiToken) { document.getElementById('setup-status').textContent = 'Space ID and API token are required'; return }
+    creds = { spaceId: spaceId, environment: environment, locale: locale, apiToken: apiToken, pageContentType: pageContentType }
+    parent.postMessage({ pluginMessage: { type: 'save-credentials', creds: creds } }, '*')
+  }
+
+  function analyzeDesign() { parent.postMessage({ pluginMessage: { type: 'analyze' } }, '*') }
+  function reanalyze() { typeOverrides = {}; showState('analyze'); analyzeDesign() }
+
+  function showState(state) {
+    ['analyze','results','progress','done'].forEach(function(s) {
+      document.getElementById('state-' + s).style.display = s === state ? '' : 'none'
+    })
+  }
+
+  function updateAnalyzeButton() {
+    var btn = document.getElementById('analyze-btn')
+    if (!btn) return
+    if (hasFrame) btn.removeAttribute('disabled'); else btn.setAttribute('disabled', '')
+    document.getElementById('analyze-status').textContent = hasFrame ? '1 frame or section selected' : 'Select a frame or section to start'
+  }
+
+  var MAX_DEPTH = 3
+
+  function countNodes(nodes) {
+    var n = 0
+    function walk(arr) { for (var i = 0; i < arr.length; i++) { n++; walk(arr[i].children) } }
+    walk(nodes)
+    return n
+  }
+
+  function renderTree(nodes, depth) {
+    var ul = document.createElement('ul')
+    ul.className = depth === 0 ? 'tree-root' : 'tree-children'
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i]
+      var li = document.createElement('li')
+      li.className = 'tree-node'
+      var label = document.createElement('div')
+      label.className = 'tree-label'
+      var typeSpan = document.createElement('span')
+      typeSpan.className = 'tree-type'
+      typeSpan.textContent = node.componentType
+      var nameSpan = document.createElement('span')
+      nameSpan.className = 'tree-name'
+      nameSpan.textContent = node.instanceName
+      var parts = []
+      if (node.texts && node.texts.length) parts.push(node.texts.length + 't')
+      if (node.imageNodeId) parts.push('img')
+      if (node.children && node.children.length) parts.push(node.children.length + (node.children.length === 1 ? ' child' : ' children'))
+      label.appendChild(typeSpan)
+      label.appendChild(nameSpan)
+      if (parts.length) {
+        var meta = document.createElement('span')
+        meta.className = 'tree-meta'
+        meta.textContent = parts.join(' · ')
+        label.appendChild(meta)
+      }
+      li.appendChild(label)
+      if (node.children && node.children.length > 0) {
+        if (depth < MAX_DEPTH) {
+          li.appendChild(renderTree(node.children, depth + 1))
+        } else {
+          var more = document.createElement('div')
+          more.className = 'tree-more'
+          more.textContent = '+ ' + countNodes(node.children) + ' more inside'
+          li.appendChild(more)
+        }
+      }
+      ul.appendChild(li)
+    }
+    return ul
+  }
+
+  function collectUniqueTypes(trees) {
+    var seen = {}
+    var types = []
+    function walk(nodes) {
+      for (var i = 0; i < nodes.length; i++) {
+        var t = nodes[i].componentType
+        if (!seen[t]) { seen[t] = true; types.push(t) }
+        walk(nodes[i].children)
+      }
+    }
+    walk(trees)
+    return types
+  }
+
+  function fetchAllContentTypes() {
+    if (!creds.spaceId || !creds.apiToken) return Promise.resolve({ ok: false, reason: 'No credentials' })
+    return cfFetch('/content_types?limit=200', 'GET').then(function(data) {
+      allContentTypes = (data.items || []).map(function(ct) {
+        return { id: ct.sys.id, name: ct.name || ct.sys.id }
+      }).sort(function(a, b) { return a.name.localeCompare(b.name) })
+      var dl = document.getElementById('ct-datalist')
+      dl.innerHTML = ''
+      allContentTypes.forEach(function(ct) {
+        var opt = document.createElement('option')
+        opt.value = ct.id
+        opt.label = ct.name + ' (' + ct.id + ')'
+        dl.appendChild(opt)
+      })
+      return { ok: true, count: allContentTypes.length }
+    }).catch(function(err) {
+      allContentTypes = []
+      return { ok: false, reason: err.message || 'Fetch failed' }
+    })
+  }
+
+  function renderMappingSection(uniqueTypes, fetchResult) {
+    var section = document.getElementById('mapping-section')
+    var list = document.getElementById('mapping-list')
+    var subheader = document.getElementById('mapping-subheader')
+    list.innerHTML = ''
+    var unmatchedTypes = uniqueTypes.filter(function(typeId) {
+      return !allContentTypes.some(function(ct) { return ct.id === typeId })
+    })
+    if (unmatchedTypes.length === 0) { section.style.display = 'none'; return }
+    document.getElementById('unmatched-badge').textContent = unmatchedTypes.length + ' unmatched'
+    section.style.display = ''
+    if (fetchResult && fetchResult.ok) {
+      subheader.innerHTML = '<span class="ct-count">' + allContentTypes.length + ' content types loaded from Contentful</span>'
+    } else if (fetchResult && !fetchResult.ok) {
+      subheader.innerHTML = '<span class="mapping-error">Could not load content types (' + (fetchResult.reason || 'unknown error') + '). <span class="retry-link" onclick="retryFetchAndRender()">Retry</span></span>'
+    } else {
+      subheader.innerHTML = ''
+    }
+    unmatchedTypes.forEach(function(typeId) {
+      var row = document.createElement('div')
+      row.className = 'mapping-row'
+      var typeLabel = document.createElement('span')
+      typeLabel.className = 'tree-type unmatched'
+      typeLabel.textContent = typeId
+      typeLabel.style.flexShrink = '0'
+      var arrow = document.createElement('span')
+      arrow.className = 'mapping-arrow'
+      arrow.textContent = '→'
+      var input = document.createElement('input')
+      input.type = 'text'
+      input.setAttribute('list', 'ct-datalist')
+      input.className = 'mapping-input'
+      input.placeholder = 'Content type ID…'
+      input.value = typeOverrides[typeId] || ''
+      input.addEventListener('input', function() {
+        var val = input.value.trim()
+        if (val) typeOverrides[typeId] = val
+        else delete typeOverrides[typeId]
+      })
+      row.appendChild(typeLabel)
+      row.appendChild(arrow)
+      row.appendChild(input)
+      list.appendChild(row)
+    })
+  }
+
+  function retryFetchAndRender() {
+    if (!analysisData) return
+    document.getElementById('mapping-subheader').innerHTML = '<span class="ct-count" style="font-style:italic">Loading…</span>'
+    fetchAllContentTypes().then(function(result) {
+      renderMappingSection(collectUniqueTypes(analysisData.trees), result)
+    })
+  }
+
+  function getEffectiveTypeId(componentType) {
+    return typeOverrides[componentType] || componentType
+  }
+
+  function cfFetch(path, method, body, extra) {
+    var url = 'https://api.contentful.com/spaces/' + creds.spaceId + '/environments/' + creds.environment + path
+    var headers = Object.assign({ 'Authorization': 'Bearer ' + creds.apiToken, 'Content-Type': 'application/vnd.contentful.management.v1+json' }, extra || {})
+    return fetch(url, { method: method || 'GET', headers: headers, body: body ? JSON.stringify(body) : undefined }).then(function(res) {
+      if (!res.ok) return res.json().catch(function() { return {} }).then(function(j) { throw new Error(j.message || j.details || (res.status + ' ' + res.statusText)) })
+      return res.json()
+    })
+  }
+
+  function getContentTypeDef(typeId) {
+    if (typeId in ctCache) return Promise.resolve(ctCache[typeId])
+    return cfFetch('/content_types/' + typeId, 'GET').then(function(ct) {
+      ctCache[typeId] = ct; return ct
+    }).catch(function() {
+      ctCache[typeId] = null; return null
+    })
+  }
+
+  function findEntryArrayField(ctDef) {
+    var fields = ctDef.fields || []
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i]
+      if (f.type === 'Array' && f.items && f.items.type === 'Link' && f.items.linkType === 'Entry') return f
+    }
+    return null
+  }
+
+  function findAssetField(ctDef) {
+    var fields = ctDef.fields || []
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].type === 'Link' && fields[i].linkType === 'Asset') return fields[i]
+    }
+    return null
+  }
+
+  function findMatchingText(texts, fieldId) {
+    var fLow = fieldId.toLowerCase()
+    var exact = null, contains = null, contained = null
+    for (var i = 0; i < texts.length; i++) {
+      var tLow = texts[i].name.toLowerCase()
+      if (tLow === fLow) { exact = texts[i]; break }
+      if (!contains && fLow.includes(tLow) && tLow.length > 2) contains = texts[i]
+      if (!contained && tLow.includes(fLow) && fLow.length > 2) contained = texts[i]
+    }
+    return exact || contains || contained || null
+  }
+
+  function buildEntryFields(node, ctDef, childEntryIds, imageAssetId) {
+    var fields = {}
+    var displayField = ctDef.displayField
+    var ctFields = ctDef.fields || []
+    var texts = node.texts || []
+    var usedTextIdx = {}
+    var textAssign = {}
+
+    // Pass 1 — name-based matching (skip display field)
+    for (var fi = 0; fi < ctFields.length; fi++) {
+      var ff = ctFields[fi]
+      if (ff.omitted || ff.disabled || ff.id === displayField) continue
+      if (ff.type !== 'Symbol' && ff.type !== 'Text') continue
+      var fLow = ff.id.toLowerCase()
+      for (var ti = 0; ti < texts.length; ti++) {
+        if (usedTextIdx[ti]) continue
+        var tLow = texts[ti].name.toLowerCase()
+        if (tLow === fLow || (fLow.includes(tLow) && tLow.length > 2) || (tLow.includes(fLow) && fLow.length > 2)) {
+          textAssign[ff.id] = texts[ti]
+          usedTextIdx[ti] = true
+          break
+        }
+      }
+    }
+
+    // Pass 2 — positional assignment for preferred fields ('children', then 'html')
+    var PREFERRED = ['children', 'html']
+    for (var pi = 0; pi < PREFERRED.length; pi++) {
+      var prefId = PREFERRED[pi]
+      if (textAssign[prefId]) continue
+      for (var pfi = 0; pfi < ctFields.length; pfi++) {
+        var pf = ctFields[pfi]
+        if (pf.id !== prefId || pf.omitted || pf.disabled) continue
+        if (pf.type !== 'Symbol' && pf.type !== 'Text') continue
+        for (var pti = 0; pti < texts.length; pti++) {
+          if (!usedTextIdx[pti]) { textAssign[prefId] = texts[pti]; usedTextIdx[pti] = true; break }
+        }
+      }
+    }
+
+    // Pass 3 — build fields object
+    for (var i = 0; i < ctFields.length; i++) {
+      var field = ctFields[i]
+      if (field.omitted || field.disabled) continue
+
+      if (field.type === 'Array' && field.items && field.items.type === 'Link' && field.items.linkType === 'Entry') {
+        if (childEntryIds.length > 0) {
+          fields[field.id] = { [creds.locale]: childEntryIds.map(function(id) { return { sys: { type: 'Link', linkType: 'Entry', id: id } } }) }
+        }
+        continue
+      }
+
+      if (field.type === 'Link' && field.linkType === 'Entry') continue
+
+      if (field.type === 'Link' && field.linkType === 'Asset') {
+        if (imageAssetId) { fields[field.id] = { [creds.locale]: { sys: { type: 'Link', linkType: 'Asset', id: imageAssetId } } } }
+        continue
+      }
+
+      if (field.type === 'Symbol' || field.type === 'Text') {
+        if (field.id === displayField) {
+          fields[field.id] = { [creds.locale]: node.instanceName.slice(0, 256) }
+          continue
+        }
+        var matched = textAssign[field.id] || null
+        if (!matched) {
+          for (var k = 0; k < texts.length; k++) {
+            if (!usedTextIdx[k]) { matched = texts[k]; usedTextIdx[k] = true; break }
+          }
+        }
+        if (matched) {
+          fields[field.id] = { [creds.locale]: field.type === 'Symbol' ? matched.content.slice(0, 256) : matched.content }
+        }
+      }
+    }
+    return fields
+  }
+
+  function createEntry(typeId, fields) {
+    return cfFetch('/entries', 'POST', { fields: fields }, { 'X-Contentful-Content-Type': typeId })
+  }
+
+  function requestImage(nodeId) {
+    return new Promise(function(resolve) {
+      pendingImageResolvers[nodeId] = resolve
+      parent.postMessage({ pluginMessage: { type: 'export-image', nodeId: nodeId } }, '*')
+    })
+  }
+
+  function uploadImageAsset(nodeId, name) {
+    return requestImage(nodeId).then(function(bytes) {
+      if (!bytes) return null
+      return fetch('https://upload.contentful.com/spaces/' + creds.spaceId + '/uploads', {
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + creds.apiToken, 'Content-Type': 'application/octet-stream' }, body: bytes
+      }).then(function(res) {
+        if (!res.ok) throw new Error('Image upload failed: ' + res.status)
+        return res.json()
+      }).then(function(upload) {
+        var safeName = name.replace(/[^a-z0-9]/gi, '_')
+        return cfFetch('/assets', 'POST', {
+          fields: { title: { [creds.locale]: name }, file: { [creds.locale]: { contentType: 'image/png', fileName: safeName + '.png', uploadFrom: { sys: { type: 'Link', linkType: 'Upload', id: upload.sys.id } } } } }
+        })
+      }).then(function(asset) {
+        return fetch(
+          'https://api.contentful.com/spaces/' + creds.spaceId + '/environments/' + creds.environment + '/assets/' + asset.sys.id + '/files/' + creds.locale + '/process',
+          { method: 'PUT', headers: { 'Authorization': 'Bearer ' + creds.apiToken, 'X-Contentful-Version': String(asset.sys.version) } }
+        ).then(function() { return asset.sys.id }).then(function(assetId) {
+          var attempts = 0
+          function poll() {
+            return new Promise(function(r) { setTimeout(r, 1000) }).then(function() {
+              return cfFetch('/assets/' + assetId, 'GET').then(function(a) {
+                if (a.fields && a.fields.file && a.fields.file[creds.locale] && a.fields.file[creds.locale].url) {
+                  return assetId  // keep as draft — do not publish
+                }
+                if (++attempts < 10) return poll()
+                return null
+              }).catch(function() { if (++attempts < 10) return poll(); return null })
+            })
+          }
+          return poll()
+        })
+      })
+    })
+  }
+
+  var createdCount, skippedCount, errorCount
+
+  function syncNode(node, depth) {
+    var indent = ''
+    for (var d = 0; d < Math.min(depth, 3); d++) indent += '  '
+    var childPromise = Promise.resolve([])
+    for (var i = 0; i < node.children.length; i++) {
+      childPromise = (function(child, promise) {
+        return promise.then(function(ids) {
+          return syncNode(child, depth + 1).then(function(id) {
+            if (id) ids.push(id)
+            return ids
+          })
+        })
+      })(node.children[i], childPromise)
+    }
+    return childPromise.then(function(childEntryIds) {
+      var effectiveTypeId = getEffectiveTypeId(node.componentType)
+      if (!effectiveTypeId) {
+        var pid = addProgress(indent + node.instanceName + ' — skipped (no content type selected)')
+        doneProgress(pid, false, null)
+        skippedCount++
+        return null
+      }
+      return getContentTypeDef(effectiveTypeId).then(function(ctDef) {
+        if (!ctDef) {
+          var overrideNote = effectiveTypeId !== node.componentType ? ' (mapped from "' + node.componentType + '")' : ''
+          var pid = addProgress(indent + node.instanceName + ' — content type "' + effectiveTypeId + '"' + overrideNote + ' not found, skipped')
+          doneProgress(pid, false, null)
+          skippedCount++
+          return null
+        }
+        var pid = addProgress(indent + node.instanceName + '…')
+        var imagePromise = Promise.resolve(null)
+        if (node.imageNodeId && findAssetField(ctDef)) {
+          var el = document.getElementById(pid)
+          if (el) el.querySelector('.p-text').textContent = indent + node.instanceName + ' — uploading image…'
+          imagePromise = uploadImageAsset(node.imageNodeId, node.instanceName).catch(function() { return null })
+        }
+        return imagePromise.then(function(imageAssetId) {
+          var fields = buildEntryFields(node, ctDef, childEntryIds, imageAssetId)
+          return createEntry(effectiveTypeId, fields).then(function(entry) {
+            doneProgress(pid, true, indent + node.instanceName)
+            createdCount++
+            return entry.sys.id
+          })
+        }).catch(function(err) {
+          doneProgress(pid, false, indent + node.instanceName + ': ' + err.message)
+          errorCount++
+          return null
+        })
+      })
+    })
+  }
+
+  function syncToContentful() {
+    if (!creds.spaceId || !creds.apiToken) { switchTab('setup'); document.getElementById('setup-status').textContent = 'Please fill in your credentials first'; return }
+    if (!analysisData || !analysisData.trees) return
+    switchTab('content')
+    showState('progress')
+    document.getElementById('progress-list').innerHTML = ''
+    progressCounter = 0
+    createdCount = 0; skippedCount = 0; errorCount = 0
+    ctCache = {}
+    var frameName = analysisData.frameName || 'Page'
+    var topLevelIds = []
+    var syncAll = Promise.resolve()
+    for (var i = 0; i < analysisData.trees.length; i++) {
+      syncAll = (function(tree, promise) {
+        return promise.then(function() {
+          return syncNode(tree, 0).then(function(id) { if (id) topLevelIds.push(id) })
+        })
+      })(analysisData.trees[i], syncAll)
+    }
+    syncAll.then(function() {
+      var pageTypeId = getEffectiveTypeId((creds.pageContentType || 'page').trim() || 'page')
+      var pid = addProgress('Creating page "' + frameName + '"…')
+      return getContentTypeDef(pageTypeId).then(function(pageCt) {
+        if (!pageCt) {
+          doneProgress(pid, false, 'Page content type "' + pageTypeId + '" not found — page entry skipped')
+          return null
+        }
+        var pageFields = buildEntryFields(
+          { instanceName: frameName, texts: [{ name: 'title', content: frameName, isLarge: true }], imageNodeId: null, children: [] },
+          pageCt, topLevelIds, null
+        )
+        if (pageCt.displayField && !pageFields[pageCt.displayField]) {
+          pageFields[pageCt.displayField] = { [creds.locale]: frameName }
+        }
+        return createEntry(pageTypeId, pageFields).then(function(pageEntry) {
+          doneProgress(pid, true, 'Page "' + frameName + '" created (draft)')
+          createdCount++
+          return pageEntry
+        })
+      }).catch(function(err) {
+        doneProgress(pid, false, 'Page entry error: ' + err.message)
+        errorCount++
+        return null
+      })
+    }).then(function() {
+      showState('done')
+      var summary = 'Created ' + createdCount + ' entr' + (createdCount !== 1 ? 'ies' : 'y') + ' as drafts in Contentful (including page "' + frameName + '").'
+      if (skippedCount > 0) summary += ' ' + skippedCount + ' skipped (content type not found).'
+      if (errorCount > 0) summary += ' ' + errorCount + ' had errors.'
+      var cfUrl = 'https://app.contentful.com/spaces/' + creds.spaceId + '/environments/' + creds.environment + '/entries'
+      document.getElementById('done-body').innerHTML = '<p>' + summary + '</p><a class="cf-link" href="' + cfUrl + '" target="_blank">View entries in Contentful →</a>'
+      parent.postMessage({ pluginMessage: { type: 'notify', text: '✓ Synced ' + createdCount + ' draft entries to Contentful' } }, '*')
+    }).catch(function(err) {
+      showState('results')
+      document.getElementById('sync-status').textContent = 'Error: ' + err.message
+      parent.postMessage({ pluginMessage: { type: 'notify', text: 'Sync failed: ' + err.message, options: { error: true } } }, '*')
+    })
+  }
+
+  var progressCounter = 0
+  function addProgress(text) {
+    var id = 'p' + (progressCounter++)
+    var list = document.getElementById('progress-list')
+    var item = document.createElement('div')
+    item.className = 'progress-item'; item.id = id
+    item.innerHTML = '<span class="p-icon spin">↻</span><span class="p-text">' + text + '</span>'
+    list.appendChild(item)
+    list.scrollTop = list.scrollHeight
+    return id
+  }
+  function doneProgress(id, success, text) {
+    var el = document.getElementById(id)
+    if (!el) return
+    var icon = el.querySelector('.p-icon')
+    var label = el.querySelector('.p-text')
+    if (icon) { icon.textContent = success ? '✓' : '✗'; icon.classList.remove('spin') }
+    if (label && text !== null) label.textContent = text
+  }
+
+  window.addEventListener('message', function(event) {
+    var msg = event.data && event.data.pluginMessage
+    if (!msg) return
+    if (msg.type === 'restore-credentials') {
+      creds = msg.creds
+      document.getElementById('space-id').value = creds.spaceId || ''
+      document.getElementById('environment').value = creds.environment || 'master'
+      document.getElementById('locale').value = creds.locale || 'de-DE'
+      document.getElementById('page-content-type').value = creds.pageContentType || 'page'
+      document.getElementById('api-token').value = creds.apiToken || ''
+      if (creds.spaceId && creds.apiToken) { document.getElementById('setup-status').textContent = '✓ Credentials loaded'; switchTab('content') }
+    }
+    if (msg.type === 'credentials-saved') {
+      document.getElementById('setup-status').textContent = '✓ Saved'
+      setTimeout(function() { document.getElementById('setup-status').textContent = ''; switchTab('content') }, 1200)
+    }
+    if (msg.type === 'selection-state') { hasFrame = msg.hasFrame; updateAnalyzeButton() }
+    if (msg.type === 'analysis-result') {
+      analysisData = msg
+      typeOverrides = {}
+      document.getElementById('frame-name-label').textContent = '🗂  ' + msg.frameName
+      var total = countNodes(msg.trees)
+      document.getElementById('count-label').textContent = total + ' component' + (total !== 1 ? 's' : '') + ' across ' + msg.trees.length + ' top-level section' + (msg.trees.length !== 1 ? 's' : '')
+      var container = document.getElementById('tree-root')
+      container.innerHTML = ''
+      var rendered = renderTree(msg.trees, 0)
+      while (rendered.firstChild) container.appendChild(rendered.firstChild)
+      document.getElementById('sync-status').textContent = ''
+      document.getElementById('mapping-section').style.display = 'none'
+      document.getElementById('mapping-subheader').innerHTML = '<span class="ct-count" style="font-style:italic">Checking content types…</span>'
+      showState('results')
+      fetchAllContentTypes().then(function(result) {
+        var uniqueTypes = collectUniqueTypes(msg.trees)
+        renderMappingSection(uniqueTypes, result)
+      })
+    }
+    if (msg.type === 'image-exported') {
+      var resolver = pendingImageResolvers[msg.nodeId]
+      if (resolver) { delete pendingImageResolvers[msg.nodeId]; resolver(msg.bytes) }
+    }
+  })
+  parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*')
+</script>
+</body>
+</html>
