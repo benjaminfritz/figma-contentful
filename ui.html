@@ -26,14 +26,19 @@
     .panel { padding: 12px; }
     .footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--figma-color-border, #e5e5e5); }
     .footer .status { margin-right: auto; color: var(--figma-color-text-secondary, #666); }
+    .footer .status.error { color: var(--figma-color-text-danger, #c0392b); }
     button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 4px; background: var(--figma-color-bg-brand, #0d99ff); color: var(--figma-color-text-onbrand, #fff); font: inherit; cursor: pointer; }
     button:hover { background: var(--figma-color-bg-brand-hover, #007be5); }
     button.secondary { color: var(--figma-color-text, #1e1e1e); background: var(--figma-color-bg-secondary, #f0f0f0); }
     button:disabled { cursor: default; opacity: .45; }
+    #save-btn { flex-shrink: 0; white-space: nowrap; }
 
     .tab-bar { display: flex; border-bottom: 1px solid var(--figma-color-border, #e5e5e5); background: var(--figma-color-bg); position: sticky; top: 0; z-index: 10; }
     .tab { flex: 1; padding: 8px 4px; text-align: center; font-size: 11px; cursor: pointer; color: var(--figma-color-text-secondary, #666); border-bottom: 2px solid transparent; user-select: none; }
     .tab.active { color: var(--figma-color-text, #000); border-bottom: 2px solid var(--figma-color-bg-brand, #0d99ff); font-weight: 500; }
+    .credentials-badge { display: none; margin-left: 4px; padding: 1px 5px; border-radius: 10px; font-size: 9px; font-weight: 500; background: var(--figma-color-bg-success-tertiary, #e8f5e9); color: var(--figma-color-text-success, #237b4b); }
+    .credentials-badge.visible { display: inline-block; }
+    .credentials-badge.expired { background: var(--figma-color-bg-danger-tertiary, #fff0f0); color: var(--figma-color-text-danger, #c0392b); }
 
     .view { display: none; }
     .view.active { display: block; }
@@ -89,12 +94,12 @@
   <img class="plugin-banner" src="{{PLUGIN_BANNER_SRC}}" alt="Figma to Contentful">
 
   <div class="tab-bar">
-    <div class="tab active" id="tab-setup" onclick="switchTab('setup')">Setup</div>
+    <div class="tab active" id="tab-setup" onclick="switchTab('setup')">Setup <span class="credentials-badge" id="credentials-badge">Stored</span></div>
     <div class="tab" id="tab-content" onclick="switchTab('content')">Sync</div>
   </div>
 
   <div class="view active" id="view-setup">
-    <p class="info-text">Enter your Contentful credentials. The Management API token is saved to this file's plugin data.</p>
+    <p class="info-text">Your Contentful credentials are stored locally for this plugin and loaded automatically. You only need to update them if Contentful rejects the token.</p>
     <div class="panel">
       <div class="field"><label for="space-id">Space ID</label><input id="space-id" placeholder="abc123xyz"></div>
       <div class="field"><label for="environment">Environment</label><input id="environment" placeholder="master"></div>
@@ -165,6 +170,7 @@
   var ctCache = {}
   var allContentTypes = []
   var typeOverrides = {}
+  var credentialsExpired = false
 
   var lastH = 0, raf = 0
   function measureH() {
@@ -193,6 +199,24 @@
     document.getElementById('view-' + tab).classList.add('active')
   }
 
+  function setCredentialsState(state) {
+    var badge = document.getElementById('credentials-badge')
+    badge.classList.add('visible')
+    badge.classList.toggle('expired', state === 'expired')
+    badge.textContent = state === 'expired' ? 'Expired' : 'Stored'
+  }
+
+  function showCredentialsExpired() {
+    if (credentialsExpired) return
+    credentialsExpired = true
+    setCredentialsState('expired')
+    switchTab('setup')
+    var status = document.getElementById('setup-status')
+    status.classList.add('error')
+    status.textContent = 'Token expired or is no longer valid. Enter a new token and save again.'
+    document.getElementById('api-token').focus()
+  }
+
   function saveCredentials() {
     var spaceId = (document.getElementById('space-id').value || '').trim()
     var environment = (document.getElementById('environment').value || '').trim() || 'master'
@@ -200,6 +224,10 @@
     var pageContentType = (document.getElementById('page-content-type').value || '').trim() || 'page'
     var apiToken = (document.getElementById('api-token').value || '').trim()
     if (!spaceId || !apiToken) { document.getElementById('setup-status').textContent = 'Space ID and API token are required'; return }
+    credentialsExpired = false
+    setCredentialsState('stored')
+    document.getElementById('setup-status').classList.remove('error')
+    document.getElementById('setup-status').textContent = 'Saving…'
     creds = { spaceId: spaceId, environment: environment, locale: locale, apiToken: apiToken, pageContentType: pageContentType }
     parent.postMessage({ pluginMessage: { type: 'save-credentials', creds: creds } }, '*')
   }
@@ -366,9 +394,14 @@
   }
 
   function cfFetch(path, method, body, extra) {
+    if (credentialsExpired) return Promise.reject(new Error('Contentful credentials need to be updated'))
     var url = 'https://api.contentful.com/spaces/' + creds.spaceId + '/environments/' + creds.environment + path
     var headers = Object.assign({ 'Authorization': 'Bearer ' + creds.apiToken, 'Content-Type': 'application/vnd.contentful.management.v1+json' }, extra || {})
     return fetch(url, { method: method || 'GET', headers: headers, body: body ? JSON.stringify(body) : undefined }).then(function(res) {
+      if (res.status === 401) {
+        showCredentialsExpired()
+        throw new Error('Contentful token expired or is no longer valid')
+      }
       if (!res.ok) return res.json().catch(function() { return {} }).then(function(j) { throw new Error(j.message || j.details || (res.status + ' ' + res.statusText)) })
       return res.json()
     })
@@ -507,6 +540,7 @@
       return fetch('https://upload.contentful.com/spaces/' + creds.spaceId + '/uploads', {
         method: 'POST', headers: { 'Authorization': 'Bearer ' + creds.apiToken, 'Content-Type': 'application/octet-stream' }, body: bytes
       }).then(function(res) {
+        if (res.status === 401) { showCredentialsExpired(); throw new Error('Contentful token expired or is no longer valid') }
         if (!res.ok) throw new Error('Image upload failed: ' + res.status)
         return res.json()
       }).then(function(upload) {
@@ -518,7 +552,11 @@
         return fetch(
           'https://api.contentful.com/spaces/' + creds.spaceId + '/environments/' + creds.environment + '/assets/' + asset.sys.id + '/files/' + creds.locale + '/process',
           { method: 'PUT', headers: { 'Authorization': 'Bearer ' + creds.apiToken, 'X-Contentful-Version': String(asset.sys.version) } }
-        ).then(function() { return asset.sys.id }).then(function(assetId) {
+        ).then(function(res) {
+          if (res.status === 401) { showCredentialsExpired(); throw new Error('Contentful token expired or is no longer valid') }
+          if (!res.ok) throw new Error('Image processing failed: ' + res.status)
+          return asset.sys.id
+        }).then(function(assetId) {
           var attempts = 0
           function poll() {
             return new Promise(function(r) { setTimeout(r, 1000) }).then(function() {
@@ -637,6 +675,7 @@
         return null
       })
     }).then(function() {
+      if (credentialsExpired) return
       showState('done')
       var summary = 'Created ' + createdCount + ' entr' + (createdCount !== 1 ? 'ies' : 'y') + ' as drafts in Contentful (including page "' + frameName + '").'
       if (skippedCount > 0) summary += ' ' + skippedCount + ' skipped (content type not found).'
@@ -681,9 +720,10 @@
       document.getElementById('locale').value = creds.locale || 'de-DE'
       document.getElementById('page-content-type').value = creds.pageContentType || 'page'
       document.getElementById('api-token').value = creds.apiToken || ''
-      if (creds.spaceId && creds.apiToken) { document.getElementById('setup-status').textContent = '✓ Credentials loaded'; switchTab('content') }
+      if (creds.spaceId && creds.apiToken) { setCredentialsState('stored'); switchTab('content') }
     }
     if (msg.type === 'credentials-saved') {
+      setCredentialsState('stored')
       document.getElementById('setup-status').textContent = '✓ Saved'
       setTimeout(function() { document.getElementById('setup-status').textContent = ''; switchTab('content') }, 1200)
     }
