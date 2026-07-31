@@ -17,7 +17,7 @@
   </script>
   <style>
     html, body { margin: 0; padding: 0; height: auto; min-height: 0; background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #1e1e1e); }
-    #plugin-root { height: auto; }
+    #plugin-root { display: flex; flex-direction: column; height: auto; max-height: 900px; overflow: hidden; }
     body { display: block; font-family: Inter, sans-serif; font-size: 11px; line-height: 1.4; }
     input { box-sizing: border-box; width: 100%; min-height: 30px; padding: 6px 8px; border: 1px solid var(--figma-color-border-strong, #b3b3b3); border-radius: 4px; background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #1e1e1e); font: inherit; }
     input:focus { outline: 2px solid var(--figma-color-border-selected, #0d99ff); outline-offset: -1px; }
@@ -33,7 +33,7 @@
     button:disabled { cursor: default; opacity: .45; }
     #save-btn { flex-shrink: 0; white-space: nowrap; }
 
-    .tab-bar { display: flex; border-bottom: 1px solid var(--figma-color-border, #e5e5e5); background: var(--figma-color-bg); position: sticky; top: 0; z-index: 10; }
+    .tab-bar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--figma-color-border, #e5e5e5); background: var(--figma-color-bg); position: sticky; top: 0; z-index: 10; }
     .tab { flex: 1; padding: 8px 4px; text-align: center; font-size: 11px; cursor: pointer; color: var(--figma-color-text-secondary, #666); border-bottom: 2px solid transparent; user-select: none; }
     .tab.active { color: var(--figma-color-text, #000); border-bottom: 2px solid var(--figma-color-bg-brand, #0d99ff); font-weight: 500; }
     .credentials-badge { display: none; margin-left: 4px; padding: 1px 5px; border-radius: 10px; font-size: 9px; font-weight: 500; background: var(--figma-color-bg-success-tertiary, #e8f5e9); color: var(--figma-color-text-success, #237b4b); }
@@ -42,6 +42,13 @@
 
     .view { display: none; }
     .view.active { display: block; }
+    #view-content.active { display: flex; flex-direction: column; min-height: 0; }
+    #state-results { display: flex; flex-direction: column; min-height: 0; }
+    .results-scroll { min-height: 0; overflow-y: auto; scrollbar-color: var(--figma-color-border, #e5e5e5) transparent; }
+    .results-scroll::-webkit-scrollbar { width: 8px; }
+    .results-scroll::-webkit-scrollbar-track { background: transparent; }
+    .results-scroll::-webkit-scrollbar-thumb { background: var(--figma-color-border, #e5e5e5); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+    #state-results > .footer { flex-shrink: 0; }
     .info-text { font-size: 11px; color: var(--figma-color-text-secondary, #666); line-height: 1.5; padding: 8px 12px 0; margin: 0; }
     #state-analyze .info-text { padding-bottom: 8px; }
 
@@ -86,7 +93,7 @@
     .cf-link:hover { text-decoration: underline; }
 
     dialog.fig-fill-picker-dialog { width:300px;max-width:300px;min-width:300px;max-height:none;height:max-content; }
-    .plugin-banner { display: block; width: 100%; height: auto; }
+    .plugin-banner { display: block; flex-shrink: 0; width: 100%; height: auto; }
   </style>
 </head>
 <body>
@@ -125,19 +132,21 @@
     </div>
 
     <div id="state-results" style="display:none">
-      <div class="frame-label" id="frame-name-label"></div>
-      <div class="count-label" id="count-label"></div>
-      <ul class="tree-root" id="tree-root"></ul>
+      <div class="results-scroll">
+        <div class="frame-label" id="frame-name-label"></div>
+        <div class="count-label" id="count-label"></div>
+        <ul class="tree-root" id="tree-root"></ul>
 
-      <div class="mapping-section" id="mapping-section" style="display:none">
-        <div class="mapping-header">
-          Content type mapping
-          <span class="warn-badge" id="unmatched-badge"></span>
+        <div class="mapping-section" id="mapping-section" style="display:none">
+          <div class="mapping-header">
+            Content type mapping
+            <span class="warn-badge" id="unmatched-badge"></span>
+          </div>
+          <div class="mapping-subheader" id="mapping-subheader"></div>
+          <datalist id="ct-datalist"></datalist>
+          <div id="mapping-list"></div>
+          <div class="mapping-hint">Type a Contentful content type ID or pick from the list. Leave blank to skip.</div>
         </div>
-        <div class="mapping-subheader" id="mapping-subheader"></div>
-        <datalist id="ct-datalist"></datalist>
-        <div id="mapping-list"></div>
-        <div class="mapping-hint">Type a Contentful content type ID or pick from the list. Leave blank to skip.</div>
       </div>
 
       <div class="footer">
